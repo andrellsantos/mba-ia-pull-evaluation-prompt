@@ -5,9 +5,9 @@ Repositório do desafio de Prompt Engineering do MBA em Engenharia de Software c
 ## Status atual do projeto
 
 - [x] **Fase 1 — Pull do prompt inicial do LangSmith** (concluída, documentada abaixo)
-- [x] **Fase 2 — Criação do `bug_to_user_story_v2.yml`** — versão **baseline, intencionalmente sem otimização** (cópia do v1), a pedido do usuário, para servir de ponto de comparação "antes/depois". A otimização de fato (Few-shot + técnica adicional) fica para uma iteração futura.
-- [x] **Fase 3 — `src/push_prompts.py` implementado** — publicação no Hub e avaliação (`src/evaluate.py`) devem ser **executadas manualmente pelo usuário** (ver instruções abaixo), pois são ações que publicam dados publicamente / em um projeto compartilhado do LangSmith.
-- [ ] Fase 4 — Iteração até atingir as métricas mínimas (não se aplica ainda, pois o v2 é deliberadamente igual ao v1)
+- [x] **Fase 2 — Otimização do `bug_to_user_story_v2.yml`** — refatorado aplicando **Few-shot Learning**, **Role Prompting** e **Skeleton of Thought** (detalhes na seção "Técnicas Aplicadas (Fase 2)" abaixo). Uma versão baseline (cópia não otimizada do v1) existiu neste arquivo em uma iteração anterior apenas para fins de comparação, e foi substituída por esta versão otimizada.
+- [x] **Fase 3 — `src/push_prompts.py` implementado** — publicação no Hub e avaliação (`src/evaluate.py`) devem ser **executadas manualmente pelo usuário** (ver instruções abaixo), pois são ações que publicam dados publicamente / em um projeto compartilhado do LangSmith. **Atenção:** o `bug_to_user_story_v2.yml` já passou por 2 iterações de conteúdo — sempre rode `push_prompts.py` novamente após qualquer edição no YAML, antes de avaliar.
+- [~] **Fase 4 — Iteração em andamento (2 de N):** Iteração 1 reprovou em `correctness` (0.79) e `f1_score` (0.73). Iteração 2 (processo de análise de 5 perguntas + regras de precisão/verbosidade + novos exemplos) corrigiu `correctness` (0.80) mas ainda reprova em `f1_score` (0.76) — falta pouco. Próximo ajuste: reforçar cobertura/recall de informação em relação à `reference` do dataset (ver diagnóstico em "Resultados Finais → Iteração 2").
 - [ ] Fase 5 — Testes de validação (`tests/test_prompts.py`)
 
 Este README documenta em detalhes o que já foi implementado/executado e será atualizado conforme as próximas fases forem concluídas.
@@ -116,15 +116,71 @@ A execução foi validada de ponta a ponta contra o LangSmith real e gerou o arq
 
 ---
 
-## Fase 2 — Criação do `bug_to_user_story_v2.yml` (baseline, sem otimização)
+## Técnicas Aplicadas (Fase 2)
 
-**Importante:** a pedido do usuário, esta versão do v2 é uma **cópia fiel do v1**, sem nenhuma técnica de Prompt Engineering aplicada ainda. O objetivo aqui não é otimizar, e sim ter uma versão v2 publicável no Hub para rodar a avaliação (Fase 3) e obter os scores de baseline "ruins" — a mesma referência de partida (métricas ~0.45-0.52) mostrada no exemplo do enunciado. A otimização real (Few-shot obrigatório + CoT/ToT/SoT/ReAct/Role Prompting) fica para uma iteração seguinte, depois de vermos os números.
+O prompt [`prompts/bug_to_user_story_v2.yml`](prompts/bug_to_user_story_v2.yml) foi refatorado a partir do v1 (baixa qualidade) aplicando três técnicas de Prompt Engineering:
 
-O arquivo [`prompts/bug_to_user_story_v2.yml`](prompts/bug_to_user_story_v2.yml) foi criado com:
+### 1. Role Prompting
 
-- A mesma `system_prompt` e `user_prompt` do v1 (nenhum texto foi alterado)
-- `version: "v2"` e `source: "leonanluppi/bug_to_user_story_v1"` (rastreabilidade de que ainda é a versão-base)
-- `techniques_applied: []` (vazio — nenhuma técnica aplicada nesta rodada, propositalmente)
+**O que foi feito:** o `system_prompt` abre definindo explicitamente a persona: *"Você é um Senior Product Manager especializado em converter relatos de bugs em User Stories para Produto, QA e Desenvolvimento"*, com uma frase adicional de contexto/experiência.
+
+**Por quê:** o v1 não definia nenhuma persona ("Você é um assistente que ajuda..."), o que deixa o tom e o nível de profundidade da resposta inconsistentes. Atribuir uma persona sênior e específica do domínio (Produto/QA/Dev) ancora o modelo no vocabulário, tom e nível de detalhe técnico corretos, impactando diretamente as métricas de **Clarity** (tom consistente) e **Helpfulness**.
+
+**Exemplo prático (trecho do prompt):**
+```
+# PERSONA
+Você é um Senior Product Manager especializado em converter relatos de bugs em
+User Stories para Produto, QA e Desenvolvimento. Você tem anos de experiência
+traduzindo relatos confusos e técnicos de usuários e QA em User Stories claras,
+acionáveis e prontas para entrar no backlog de um time ágil.
+```
+
+### 2. Skeleton of Thought (SoT)
+
+**O que foi feito:** o prompt define um **processo de análise explícito de 5 perguntas** (`PROCESSO DE ANÁLISE`) que o modelo deve responder mentalmente antes de escrever qualquer texto, e um **esqueleto de resposta de 4 seções** (`Título da User Story` → `User Story` → `Critérios de Aceitação` → `Observações Técnicas`) derivado diretamente dessas perguntas.
+
+**Por quê:** na primeira iteração, o Skeleton of Thought já existia, mas apenas como uma lista de seções de saída — sem nenhum passo de análise anterior. Como os resultados da avaliação ainda não atingiram o mínimo de 0.8 em todas as métricas, esta iteração aprofunda a técnica: agora o modelo é forçado a identificar explicitamente *quem* é afetado, *qual ação* falta, *qual benefício* está implícito e *quais fatos concretos* (números, plataformas, endpoints, logs) precisam aparecer, antes de decidir a estrutura final. Isso reduz respostas genéricas e aproxima o conteúdo gerado da referência (`reference`) do dataset, impactando **F1-Score**, **Correctness** e **Clarity**.
+
+**Exemplo prático (trecho do prompt):**
+```
+# PROCESSO DE ANÁLISE (Skeleton of Thought)
+1. Quem é o usuário ou sistema afetado?
+2. Qual ação corrigida a pessoa/sistema precisa conseguir?
+3. Qual benefício direto aparece no relato?
+4. Quais fatos, números, plataformas, endpoints, logs e sintomas devem aparecer?
+5. Qual é o menor conjunto de seções necessário para espelhar o bug?
+```
+
+### 3. Few-shot Learning (obrigatório)
+
+**O que foi feito:** foram incluídos **3 exemplos completos** de entrada/saída no `system_prompt`: um com **gatilho técnico explícito** (endpoint, status HTTP e log de erro), um **sem nenhum gatilho técnico** (demonstrando a omissão deliberada da seção "Observações Técnicas") e um **edge case de múltiplos problemas** no mesmo relato (demonstrando como focar no problema principal e citar o secundário como observação).
+
+**Por quê:** o v1 não tinha nenhum exemplo — o modelo tinha que "adivinhar" o formato e nível de qualidade esperado. Nesta iteração, os exemplos foram trocados para ensinar, na prática, a regra de verbosidade condicional (seção 4 do esqueleto): o modelo vê lado a lado um caso em que a seção técnica é necessária e um caso em que ela deve ser omitida, o que deveria reduzir texto genérico/desnecessário e subir **Clarity** e **Precision**.
+
+**Exemplo prático (um dos 3 exemplos incluídos no prompt — caso "sem gatilho técnico"):**
+```
+Relato de Bug: "O botão 'Cancelar Pedido' some da tela quando o pedido está
+pendente há mais de 24 horas, mesmo que ele ainda não tenha sido processado."
+
+Resposta esperada:
+1. Título da User Story: Botão "Cancelar Pedido" desaparece após 24 horas...
+2. User Story: Como um cliente com um pedido pendente há mais de 24 horas...
+3. Critérios de Aceitação: (5 bullets Dado que/Quando/Então/E)
+(sem seção 4 — relato não traz nenhum gatilho técnico, então a seção é omitida)
+```
+
+### 4. Regras de Precisão e Controle de Verbosidade (refinamento da iteração 2)
+
+**O que foi feito:** foi adicionada uma seção `REGRAS DE PRECISÃO E CONTROLE DE VERBOSIDADE` que instrui o modelo a: reutilizar termos/números/endpoints/status citados no relato original (em vez de generalizar), nunca inventar detalhes ausentes, nunca criar seções além das 4 do esqueleto sem gatilho explícito, manter Markdown simples (sem tabelas/emojis/negrito solto), preferir 5 critérios de aceitação para bugs simples, e só incluir a seção "Observações Técnicas" quando o relato trouxer logs, SQL, z-index, performance, segurança, race condition, endpoint/status HTTP específico ou mais de um problema relatado.
+
+**Por quê:** essa não é uma das 3 técnicas "nomeadas" do curso, mas um refinamento necessário para que as técnicas anteriores funcionem bem juntas — sem essas regras, o modelo tende a "inflar" a resposta com seções técnicas genéricas mesmo quando o relato não traz informação técnica nenhuma, o que diverge da referência (`reference`) do dataset e penaliza **Precision** (informação inventada/irrelevante) e **F1-Score** (recall/precision do LLM-judge contra o ground truth).
+
+### Outros requisitos do prompt otimizado (checklist do enunciado)
+
+- **Instruções claras e específicas:** seções `# OBJETIVO`, `# PROCESSO DE ANÁLISE` e `# ESQUELETO DE RESPOSTA`.
+- **Regras explícitas de comportamento:** seções `# REGRAS DE PRECISÃO E CONTROLE DE VERBOSIDADE` e `# REGRAS OBRIGATÓRIAS` (idioma, nunca inventar detalhes, nunca copiar o relato literalmente, tom profissional/empático, etc.).
+- **Tratamento de edge cases:** regras explícitas para relato vago/incompleto (não inventar detalhes concretos) e relato com múltiplos problemas (focar no principal, citar o(s) demais como observação técnica) + os Exemplos 2 e 3 (few-shot) demonstrando esse comportamento na prática.
+- **System vs. User prompt:** o `system_prompt` carrega toda a persona/processo de análise/esqueleto/regras/exemplos (comportamento fixo do agente); o `user_prompt` permanece minimalista (`"{bug_report}"`), carregando apenas o dado variável de cada execução — separação clara entre "como agir" (system) e "sobre o quê agir agora" (user).
 
 ---
 
@@ -177,11 +233,49 @@ O `evaluate.py` (já pronto, não alterado) irá:
 - Rodar o prompt contra os 15 exemplos usando o LLM configurado em `LLM_PROVIDER`/`LLM_MODEL`
 - Calcular as 5 métricas e exibir o resultado no terminal, além de publicar os resultados no seu projeto do LangSmith
 
-### Resultado esperado
+## Resultados Finais
 
-Como o v2 é idêntico ao prompt "ruim" do enunciado, o esperado é que a avaliação **reprove** (métricas próximas de 0.45–0.55, como no exemplo ilustrativo do desafio). Isso é intencional: serve de baseline documentado antes de aplicarmos as técnicas de otimização na próxima iteração (Fase 4).
+### Iteração 1 — `bug_to_user_story_v2` (Few-shot + Role Prompting + Skeleton of Thought, sem processo de análise/regras de precisão)
 
-*(Após você rodar os dois comandos acima, me avise o resultado — ou cole a saída do terminal — que eu atualizo esta seção com os números reais e os links/screenshots do dashboard.)*
+Execução real via `python src/evaluate.py`, provider `openai` (`gpt-4o-mini` para responder, `gpt-4o` para avaliar), contra os 15 exemplos de `datasets/bug_to_user_story.jsonl`:
+
+| Métrica | Score | Threshold | Status |
+|---|---|---|---|
+| Helpfulness (derivada) | 0.86 | 0.8 | ✅ |
+| Correctness (derivada) | 0.79 | 0.8 | ❌ |
+| F1-Score | 0.73 | 0.8 | ❌ |
+| Clarity | 0.87 | 0.8 | ✅ |
+| Precision | 0.84 | 0.8 | ✅ |
+| **Média geral** | **0.8183** | 0.8 | — |
+
+**Status: ❌ REPROVADO** — apesar da média geral (0.8183) já superar 0.8, a regra do desafio exige as **5 métricas individualmente** ≥ 0.8, e `correctness` e `f1_score` ficaram abaixo (0.79 e 0.73).
+
+**Diagnóstico:** o F1-Score por exemplo variou bastante (de 0.58 a 0.89 entre os 15 casos), com vários exemplos na faixa 0.58–0.69 — indicando que a resposta gerada, embora clara (Clarity 0.87) e sem muita alucinação (Precision 0.84), ainda diverge estruturalmente/em conteúdo da `reference` do dataset em boa parte dos casos (baixo *recall* de informações esperadas, conforme o critério de F1-Score do avaliador). Foi exatamente esse resultado que motivou a **Iteração 2** (já aplicada em `prompts/bug_to_user_story_v2.yml`, ver seção "Técnicas Aplicadas (Fase 2)"): processo de análise explícito de 5 perguntas, regras de precisão (reaproveitar termos/números/endpoints do relato) e novos exemplos de few-shot — mudanças voltadas justamente a reduzir a divergência resposta-vs-referência que penaliza F1/Correctness.
+
+### Iteração 2 — `bug_to_user_story_v2` (+ Processo de Análise + Regras de Precisão/Verbosidade)
+
+Execução real via `python src/evaluate.py`, mesmo provider/modelos da Iteração 1, contra os mesmos 15 exemplos:
+
+| Métrica | Iteração 1 | Iteração 2 | Threshold | Status |
+|---|---|---|---|---|
+| Helpfulness (derivada) | 0.86 | 0.86 | 0.8 | ✅ |
+| Correctness (derivada) | 0.79 | 0.80 | 0.8 | ✅ |
+| F1-Score | 0.73 | 0.76 | 0.8 | ❌ |
+| Clarity | 0.87 | 0.88 | 0.8 | ✅ |
+| Precision | 0.84 | 0.85 | 0.8 | ✅ |
+| **Média geral** | 0.8183 | **0.8285** | 0.8 | — |
+
+**Status: ❌ REPROVADO** — todas as métricas subiram em relação à Iteração 1, e `correctness` passou a ficar ≥ 0.8. Falta apenas **F1-Score** (0.76), agora a única métrica abaixo do threshold — e a mais próxima de passar até agora.
+
+**Diagnóstico:** olhando os 15 scores individuais de F1, os piores casos ficaram em 0.55–0.69 (exemplos 2, 5, 9, 1, 10, 4), enquanto os melhores chegaram a 0.90–1.00 (exemplos 7, 13, 14, 15). Como Precision (métrica isolada) já está alta (0.85) e Clarity também (0.88), a divergência não é por alucinação nem por falta de organização — o F1-Score do avaliador combina *precision* e *recall* específicos da resposta contra a referência, então o gargalo provável é **recall**: em parte dos 15 exemplos a resposta ainda deixa de cobrir algum detalhe/comportamento presente na `reference` do dataset (ex: um critério de aceitação a mais que a referência tem e a resposta não cobriu, ou uma nuance do relato original não refletida). Isso aponta para a Iteração 3: reforçar no prompt a cobertura completa dos comportamentos/condições citados no relato (sem se limitar a "5 critérios" quando o relato sugerir mais de 5 condições relevantes) antes de fechar a resposta.
+
+### Iteração 3 — pendente
+
+*(Aguardando ajuste do prompt focado em F1-Score/recall, novo `push_prompts.py` + `evaluate.py`, e a saída correspondente.)*
+
+### Link do dashboard e screenshots
+
+*(Pendente: adicionar aqui o link público do projeto no LangSmith — `https://smith.langchain.com/projects/mba-ia-pull-evaluation-prompt` — e screenshots das avaliações/tracing, conforme exigido no critério "Entregável" do desafio.)*
 
 ---
 
@@ -195,7 +289,7 @@ mba-ia-pull-evaluation-prompt/
 │
 ├── prompts/
 │   ├── bug_to_user_story_v1.yml  # Prompt inicial (pull do LangSmith Hub) ✅
-│   └── bug_to_user_story_v2.yml  # Baseline sem otimização (Fase 2) ✅ — otimização real ainda pendente
+│   └── bug_to_user_story_v2.yml  # Otimizado: Few-shot + Role Prompting + Skeleton of Thought (Fase 2) ✅
 │
 ├── datasets/
 │   └── bug_to_user_story.jsonl   # 15 exemplos de bugs para avaliação
@@ -213,6 +307,6 @@ mba-ia-pull-evaluation-prompt/
 
 ## Próximos passos
 
-- **Pendente (você):** rodar `python src/push_prompts.py` e depois `python src/evaluate.py` (veja a seção "Fase 3" acima) para obter os scores de baseline do v2.
-- **Fase 4 (otimização real):** com os scores de baseline em mãos, reescrever `prompts/bug_to_user_story_v2.yml` aplicando Few-shot Learning (obrigatório) + pelo menos mais uma técnica (CoT, ToT, SoT, ReAct ou Role Prompting), e repetir push + avaliação (3-5 iterações) até todas as 5 métricas ficarem >= 0.8.
+- **Pendente (você):** rodar `python src/push_prompts.py` e depois `python src/evaluate.py` sobre a Iteração 2 do prompt (veja "Resultados Finais → Iteração 2" acima) e compartilhar a saída.
+- **Fase 4 (iteração):** a Iteração 1 reprovou em `correctness` (0.79) e `f1_score` (0.73) — ver diagnóstico em "Resultados Finais". Se a Iteração 2 ainda não atingir 0.8 em todas as métricas, seguimos analisando o `reasoning` de cada métrica e ajustando o prompt (espera-se 3-5 iterações no total).
 - **Fase 5:** implementar os 6 testes em `tests/test_prompts.py` e validar com `pytest tests/test_prompts.py`.
