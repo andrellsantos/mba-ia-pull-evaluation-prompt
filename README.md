@@ -7,8 +7,9 @@ Repositório do desafio de Prompt Engineering do MBA em Engenharia de Software c
 - [x] **Fase 1 — Pull do prompt inicial do LangSmith** (concluída, documentada abaixo)
 - [x] **Fase 2 — Otimização do `bug_to_user_story_v2.yml`** — refatorado aplicando **Few-shot Learning**, **Role Prompting** e **Skeleton of Thought** (detalhes na seção "Técnicas Aplicadas (Fase 2)" abaixo). Uma versão baseline (cópia não otimizada do v1) existiu neste arquivo em uma iteração anterior apenas para fins de comparação, e foi substituída por esta versão otimizada.
 - [x] **Fase 3 — `src/push_prompts.py` implementado** — publicação no Hub e avaliação (`src/evaluate.py`) devem ser **executadas manualmente pelo usuário** (ver instruções abaixo), pois são ações que publicam dados publicamente / em um projeto compartilhado do LangSmith. **Atenção:** o `bug_to_user_story_v2.yml` já passou por 2 iterações de conteúdo — sempre rode `push_prompts.py` novamente após qualquer edição no YAML, antes de avaliar.
-- [~] **Fase 4 — Iteração em andamento (4 de N concluídas):** Iteração 1: `f1_score` 0.73 ❌. Iteração 2: `f1_score` 0.76 ❌. Iteração 3 (esqueletos adaptativos por complexidade): `f1_score` 0.79 ❌. Iteração 4 (exemplos para cálculo monetário e performance): `f1_score` 0.78 ❌ — resultado praticamente estagnado, ver diagnóstico em "Resultados Finais → Iteração 4": adicionar mais exemplos não ajudou tanto quanto generalizar melhor as regras existentes (reproduzir a causa técnica exata e variações do cálculo, ex: desconto percentual). As outras 4 métricas seguem aprovadas em todas as iterações desde a 2/3. Iteração 5 proposta, aguardando confirmação.
-- [ ] Fase 5 — Testes de validação (`tests/test_prompts.py`)
+- [x] **Fase 4 — Iteração concluída em 5 rodadas: ✅ APROVADO.** F1-Score por iteração: 0.73 → 0.76 → 0.79 → 0.78 → **0.83**. A virada veio na Iteração 5, ao descobrir que duas regras do próprio prompt limitavam o recall (literalidade numérica excessiva + proibição de inferir as expectativas colaterais que a referência espera). **Todas as 5 métricas ≥ 0.8, média geral 0.8489.**
+- [x] **Fase 5 — Testes de validação implementados** (`tests/test_prompts.py`): 6 testes cobrindo `system_prompt` não vazio, definição de persona, formato/Markdown exigido, exemplos de few-shot, ausência de `TODO` e mínimo de 2 técnicas listadas. Validado com `pytest tests/test_prompts.py -v` — **6 passed**.
+- [x] Evidências — screenshots do dashboard do LangSmith em `images/` (ver seção "Evidências no LangSmith" abaixo)
 
 Este README documenta em detalhes o que já foi implementado/executado e será atualizado conforme as próximas fases forem concluídas.
 
@@ -141,52 +142,56 @@ acionáveis e prontas para entrar no backlog de um time ágil.
 
 **Por quê:** nas iterações 1-2, o esqueleto era único e fixo (4 seções sempre, com uma seção genérica "Observações Técnicas" para qualquer tipo de contexto técnico). O resultado da Iteração 2 (ver "Resultados Finais") mostrou Correctness, Clarity e Precision acima de 0.8, mas **F1-Score em 0.76** — o que indica um problema de **recall**: a resposta não estava cobrindo o mesmo tipo de informação/estrutura que a referência do dataset espera para cada bug. Como o dataset mistura bugs simples, médios (com gatilhos técnicos variados: performance, segurança, cálculo, concorrência, UI) e complexos (múltiplos problemas), um único esqueleto genérico não conseguia se adaptar à granularidade que cada categoria exige. O esqueleto adaptativo por complexidade + gatilhos de seção nomeados ataca diretamente essa lacuna de recall, o que deve subir **F1-Score** e **Correctness**.
 
+Além disso, a partir da iteração 5 o SoT ganhou uma seção `ANATOMIA DOS CRITÉRIOS DE ACEITAÇÃO`, que define o papel de cada bullet — 1 `Dado que` (contexto), 1 `Quando` (ação), 1 `Então` (comportamento correto) e **2 bullets `E` de expectativa colateral de qualidade** (confirmação visual, atualização de estado/contador, bloqueio de ação inválida, mensagem explicando o formato correto, consistência entre plataformas, etc.).
+
 **Exemplo prático (trecho do prompt):**
 ```
-## Bugs médios (um problema central com pelo menos um gatilho técnico)
-User Story + "Critérios de Aceitação:" (5-6 bullets) + UMA seção técnica,
-cujo nome depende do gatilho:
-- endpoint/HTTP/log → "Contexto Técnico:"
-- segurança/permissão → "Contexto de Segurança:" (+ "Critérios Adicionais
-  para Admins:" se houver dois perfis de usuário)
-- cálculo monetário → "Exemplo de Cálculo:" + "Contexto Técnico:"
-- concorrência/race condition → "Critérios de Prevenção:"
+# ANATOMIA DOS CRITÉRIOS DE ACEITAÇÃO
+- Dado que <contexto/estado do usuário no momento do problema>
+- Quando <ação que o usuário executa>
+- Então <comportamento correto esperado — o oposto do sintoma>
+- E <expectativa colateral de qualidade>
+- E <segunda expectativa colateral de qualidade>
 ```
 
 ### 3. Few-shot Learning (obrigatório)
 
-**O que foi feito:** o `system_prompt` inclui **6 exemplos autorais** de entrada/saída, cobrindo (1) bug simples sem seção técnica, (2) gatilho de log/endpoint (→ "Contexto Técnico"), (3) gatilho de segurança com dois perfis de usuário (→ "Critérios Adicionais para Admins" + "Contexto de Segurança"), (4) gatilho de **cálculo monetário** (→ "Exemplo de Cálculo" + "Contexto Técnico", adicionado na iteração 4), (5) gatilho de **performance/paginação** (→ "Critérios Técnicos" + "Contexto do Bug", adicionado na iteração 4), e (6) bug complexo com o formato `=== USER STORY PRINCIPAL ===` / `=== CRITÉRIOS DE ACEITAÇÃO ===` (subseções A./B.) / `=== CRITÉRIOS TÉCNICOS ===` / `=== CONTEXTO DO BUG ===` / `=== TASKS TÉCNICAS SUGERIDAS ===`.
+**O que foi feito:** o `system_prompt` inclui **5 exemplos autorais** de entrada/saída: **2 bugs simples** (um com identificador incidental que deve ser generalizado, outro de validação), **1 de performance** com limiar mantido (→ "Critérios Técnicos" + "Contexto do Bug"), **1 de cálculo com percentual** (→ "Exemplo de Cálculo" com subtotal/desconto/total + "Contexto Técnico") e **1 complexo** com o formato `=== USER STORY PRINCIPAL ===` / `=== CRITÉRIOS DE ACEITAÇÃO ===` (subseções A./B.) / `=== CRITÉRIOS TÉCNICOS ===` / `=== CONTEXTO DO BUG ===` / `=== TASKS TÉCNICAS SUGERIDAS ===`.
 
-**Por quê:** a Iteração 3 já definia a *regra* de cada gatilho em `GATILHOS DE SEÇÃO`, mas só tinha exemplo de few-shot para 2 dos 6 gatilhos (log/endpoint e segurança). O resultado real (ver "Resultados Finais → Iteração 3") mostrou justamente os bugs de cálculo monetário e performance/paginação entre os piores F1 (0.65 e 0.65) — ou seja, o modelo tinha a regra mas nenhuma demonstração concreta de como aplicá-la. Os 2 novos exemplos fecham exatamente essa lacuna.
+**Por quê:** a iteração 4 adicionou exemplos (4 → 6) e o F1 **caiu** de 0.79 para 0.78, com os bugs complexos regredindo de ≥0.90 para 0.85–0.90 — evidência de diluição por excesso de contexto. A iteração 5 inverte a estratégia: **reduz para 5 exemplos** (system prompt de 14.4k → 12.4k caracteres) e realoca a cobertura para onde os dados mostravam o pior desempenho — os bugs **simples**, que somam 1/3 do dataset e tinham a pior média de F1 (0.738) apesar de serem os mais fáceis, e que até então tinham apenas 1 exemplo.
 
-**Exemplo prático (um dos 2 exemplos novos da iteração 4 — gatilho de cálculo monetário):**
+**Exemplo prático (exemplo novo da iteração 5 — bug simples com identificador generalizado):**
 ```
-Relato de Bug: "Sistema de frete calcula valor errado quando o pedido tem
-mais de 3 volumes. Um pedido com 4 volumes de R$ 20 cada deveria custar
-R$ 80 de frete total, mas o sistema está cobrando R$ 100."
+Relato: "O botão de favoritar não funciona na página do produto ID 8842."
 
-Resposta esperada:
-Como um cliente finalizando a compra, eu quero que o valor do frete seja
-calculado corretamente quando o pedido tem múltiplos volumes...
+Resposta:
+Como um cliente navegando na loja, eu quero favoritar produtos que me
+interessam, para que eu possa encontrá-los depois e decidir minha compra
+com calma.
 
-Critérios de Aceitação: (bullets Dado que/Quando/Então)
-Exemplo de Cálculo:
-- Volume 1: R$ 20 / Volume 2: R$ 20 / Volume 3: R$ 20 / Volume 4: R$ 20
-- Total esperado: R$ 80
-Contexto Técnico: (bug atual cobra R$ 100 em vez de R$ 80)
+Critérios de Aceitação:
+- Dado que estou visualizando a página de um produto   <- "ID 8842" generalizado
+- Quando clico no botão de favoritar
+- Então o produto deve ser adicionado à minha lista de favoritos
+- E devo ver uma confirmação visual...                 <- colateral inferido
+- E o contador de favoritos deve ser atualizado        <- colateral inferido
 ```
 
-### 4. Regras de Precisão e Controle de Verbosidade (refinamento da iteração 2, reforçado na 4)
+### 4. Generalização vs. Literalidade (regra crítica, reescrita na iteração 5)
 
-**O que foi feito:** a seção `REGRAS DE PRECISÃO E CONTROLE DE VERBOSIDADE` instrui o modelo a: reutilizar termos/números/endpoints/status citados no relato original, nunca inventar detalhes ausentes, nunca criar seções além das previstas no esqueleto/gatilho aplicável, manter Markdown simples, nunca inventar ou omitir subseções em bugs complexos — e, a partir da iteração 4, uma regra específica de **fidelidade numérica**: quando o relato envolver cálculos ou métricas de performance, os números exatos devem ser reproduzidos (não arredondados/generalizados), com o resultado do cálculo mostrado explicitamente.
+**O que foi feito:** a antiga seção "Regras de Precisão e Controle de Verbosidade" foi **reescrita** como `GENERALIZAÇÃO vs. LITERALIDADE`, que distingue três casos em vez de aplicar literalidade a tudo:
 
-**Por quê:** o diagnóstico da Iteração 3 mostrou que, nos piores casos, a `Precision` isolada também caía (0.67–0.70) — indicando que o modelo às vezes generalizava ("o frete deve ser calculado corretamente") em vez de reproduzir os números exatos do relato, divergindo da referência tanto em recall (F1) quanto em precisão de conteúdo.
+- **Generalizar** identificadores e valores incidentais (`produto ID 1234` → "um produto"; `mostra 50 mas só há 42` → "o número exibido deve corresponder ao total real"), porque são apenas a amostra do sintoma;
+- **Manter** limiares e condições que definem o escopo (`mais de 1000 registros`, `telas menores que 768px`, `mais de 50 itens`) e plataformas/perfis (`iOS`, `Safari`, `usuário comum vs. admin`);
+- **Reproduzir com exatidão** — mas **somente dentro das seções técnicas** — endpoints, status HTTP, logs, z-index, tempos medidos e valores monetários.
+
+**Por quê:** esta foi a descoberta central da análise da iteração 4. Comparando as `reference` reais do dataset com as regras então vigentes, ficou claro que duas delas atuavam **contra** a métrica: (a) *"reutilizar os números exatos do relato"* fazia o modelo escrever `produto ID 1234` e `50 vs 42` nos critérios, sendo que a referência os descarta — inflando conteúdo ausente do gabarito; e (b) *"não inventar detalhes ausentes"* **suprimia** justamente as expectativas colaterais que a referência infere e espera ("confirmação visual", "contador atualizado", "atualizado em tempo real", "apenas usuários com status ativo"). O efeito combinado explica o padrão observado por 3 iterações: **Precision alta e estável (0.83–0.85) com recall preso**, mantendo o F1 em 0.76–0.79. A iteração 5 rebalanceia: permite explicitamente a inferência de expectativas colaterais (via ANATOMIA) e restringe a literalidade numérica às seções técnicas.
 
 ### Outros requisitos do prompt otimizado (checklist do enunciado)
 
-- **Instruções claras e específicas:** seções `# OBJETIVO`, `# PROCESSO DE ANÁLISE`, `# ESQUELETOS POR COMPLEXIDADE` e `# GATILHOS DE SEÇÃO`.
-- **Regras explícitas de comportamento:** seções `# REGRAS DE PRECISÃO E CONTROLE DE VERBOSIDADE` e `# REGRAS OBRIGATÓRIAS` (idioma, nunca inventar detalhes, nunca copiar o relato literalmente, tom profissional/empático, etc.).
-- **Tratamento de edge cases:** relato vago/incompleto é tratado explicitamente como bug simples (regra em `REGRAS OBRIGATÓRIAS`); bugs complexos com múltiplos problemas têm um esqueleto próprio (subseções A./B./C./D., uma por problema) + o Exemplo 4 (few-shot) demonstrando esse comportamento na prática.
+- **Instruções claras e específicas:** seções `# OBJETIVO`, `# PROCESSO DE ANÁLISE`, `# ANATOMIA DOS CRITÉRIOS DE ACEITAÇÃO`, `# ESQUELETOS POR COMPLEXIDADE` e `# GATILHOS DE SEÇÃO`.
+- **Regras explícitas de comportamento:** seções `# GENERALIZAÇÃO vs. LITERALIDADE` e `# REGRAS OBRIGATÓRIAS` (idioma, escopo de inferência permitido, nunca criar seções fora do esqueleto, Markdown simples, etc.).
+- **Tratamento de edge cases:** identificadores incidentais são generalizados enquanto limiares são preservados (regra `GENERALIZAÇÃO vs. LITERALIDADE`); bugs de backend/integração sem usuário final recebem o ator "o sistema" (pergunta 1 do `PROCESSO DE ANÁLISE`); bugs complexos com múltiplos problemas têm esqueleto próprio (subseções A./B./C./D., uma por problema) + o Exemplo 5 (few-shot) demonstrando o comportamento.
 - **System vs. User prompt:** o `system_prompt` carrega toda a persona/processo de análise/esqueletos/gatilhos/regras/exemplos (comportamento fixo do agente); o `user_prompt` carrega apenas o relato (`{bug_report}`) e um lembrete curto para seguir o processo e não incluir texto extra — separação clara entre "como agir" (system) e "sobre o quê agir agora" (user).
 
 ---
@@ -314,10 +319,136 @@ Execução real via `python src/evaluate.py`, mesmo provider/modelos das iteraç
 
 **Diagnóstico (por que não subiu como esperado):** comparando os 15 scores individuais com a Iteração 3, o exemplo 9 (cálculo monetário — justamente o gatilho que o novo exemplo deveria reforçar) **não mudou** (0.65 → 0.65): o novo exemplo de few-shot usava um cálculo simples por multiplicação (4 volumes × R$ 20), enquanto a referência real do exemplo 9 do dataset envolve desconto percentual com quebra em subtotal/desconto/total — um padrão de cálculo diferente do que o exemplo ensinou. O exemplo 10 (performance) melhorou pouco (0.65 → 0.69): a referência real menciona correções bem específicas da plataforma (paginação + thread em background + padrão de lista), mais detalhadas do que o exemplo genérico adicionado. Além disso, os 2 bugs complexos que antes tinham F1 ≥ 0.90 caíram (13: 0.95 → 0.85; 15: 1.00 → 0.90) e o exemplo 7 (outro caso de performance) piorou em Clarity e Precision (0.90 → 0.75 e 0.83 → 0.67) — possivelmente por diluição, com 6 exemplos de few-shot no prompt em vez de 4. **Conclusão:** adicionar mais exemplos não estava resolvendo o problema; o ganho depende de generalizar melhor a regra (reproduzir a causa técnica exata e a composição do cálculo, incluindo variações como desconto percentual), não de exemplificar mais casos específicos.
 
-### Link do dashboard e screenshots
+### Iteração 5 — `bug_to_user_story_v2` (rebalanceamento literalidade ↔ inferência)
 
-*(Pendente: adicionar aqui o link público do projeto no LangSmith — `https://smith.langchain.com/projects/mba-ia-pull-evaluation-prompt` — e screenshots das avaliações/tracing, conforme exigido no critério "Entregável" do desafio.)*
+Análise que motivou a mudança — F1 por grupo de complexidade na Iteração 4:
 
+| Grupo | Qtd. | F1 médio | Observação |
+|---|---|---|---|
+| **Simples** | 5 | **0.738** | pior grupo, apesar de serem os casos mais fáceis |
+| Médio | 7 | 0.777 | maior grupo |
+| Complexo | 3 | 0.883 | melhor grupo (estrutura `===` funcionando) |
+
+O déficit para atingir 0.80 é de apenas **0.22 na soma dos 15 F1**. Se os 5 bugs simples subissem de 0.738 para ~0.88, o F1 global iria a **~0.83** — o caminho de maior alavancagem, e justamente o grupo que nunca havia recebido regra própria (as iterações 3 e 4 investiram só em seções técnicas de médios/complexos).
+
+Mudanças aplicadas:
+1. **`ANATOMIA DOS CRITÉRIOS DE ACEITAÇÃO`** — define o papel de cada bullet e exige 2 bullets `E` de expectativa colateral (padrão observado em 100% das referências de bugs simples).
+2. **`GENERALIZAÇÃO vs. LITERALIDADE`** — substitui a regra literalista: generalizar identificadores incidentais, preservar limiares/plataformas, e reproduzir números exatos apenas nas seções técnicas.
+3. **Regra de ator e de benefício** — ator "o sistema" para bugs de backend/integração; o "para que" deve ser o objetivo maior do usuário, não a ausência do bug.
+4. **Redução de 6 → 5 exemplos** (system prompt 14.4k → 12.4k chars), com a cobertura realocada para bugs simples (agora 2 exemplos).
+
+#### Resultado: ✅ APROVADO
+
+| Métrica | Iteração 3 | Iteração 4 | **Iteração 5** | Threshold | Status |
+|---|---|---|---|---|---|
+| Helpfulness (derivada) | 0.85 | 0.85 | **0.86** | 0.8 | ✅ |
+| Correctness (derivada) | 0.81 | 0.81 | **0.84** | 0.8 | ✅ |
+| F1-Score | 0.79 | 0.78 | **0.83** | 0.8 | ✅ |
+| Clarity | 0.87 | 0.87 | **0.88** | 0.8 | ✅ |
+| Precision | 0.83 | 0.83 | **0.84** | 0.8 | ✅ |
+| **Média geral** | 0.8287 | 0.8279 | **0.8489** | 0.8 | ✅ |
+
+```
+✅ STATUS: APROVADO - Todas as métricas >= 0.8
+```
+
+**Validação da hipótese** — F1 médio por grupo, antes e depois do rebalanceamento:
+
+| Grupo | Iteração 4 | Iteração 5 | Δ |
+|---|---|---|---|
+| Simples | 0.738 | 0.790 | **+0.052** |
+| Médio | 0.777 | 0.814 | **+0.037** |
+| Complexo | 0.883 | 0.963 | **+0.080** |
+| **Global** | 0.785 | **0.836** | **+0.051** |
+
+Os três grupos melhoraram simultaneamente, o que confirma as duas hipóteses da análise:
+
+- **A regra de generalização destravou o recall.** Permitir as expectativas colaterais inferidas e parar de repetir identificadores incidentais elevou simples e médios — e o exemplo 9 (cálculo com desconto percentual) deu o maior salto individual de toda a série: **0.65 → 0.90 (+0.25)**, validando também a regra específica de subtotal/desconto/total.
+- **A diluição por excesso de exemplos era real.** Os bugs complexos, que a iteração 4 havia degradado de ≥0.90 para 0.883, saltaram para **0.963** — melhor patamar de toda a série — apenas por enxugar o prompt de 6 para 5 exemplos, sem nenhuma mudança na estrutura `===` que eles usam.
+
+### Tabela comparativa: v1 (prompt ruim) vs. v2 (otimizado)
+
+| Aspecto | `leonanluppi/bug_to_user_story_v1` | `andrellsantos/bug_to_user_story_v2` |
+|---|---|---|
+| Persona | Nenhuma ("Você é um assistente que ajuda...") | Senior Product Manager especializado em bugs → User Stories |
+| Estrutura de saída | Nenhuma ("crie uma user story a partir dele") | Esqueleto adaptativo por complexidade + anatomia dos critérios |
+| Exemplos (Few-shot) | 0 | 5 exemplos autorais cobrindo simples, médio e complexo |
+| Regras de comportamento | Nenhuma | Generalização vs. literalidade, gatilhos de seção, regras obrigatórias |
+| Tratamento de edge cases | Nenhum | Identificador incidental, ator "o sistema", múltiplos problemas |
+| System vs. User prompt | `{bug_report}` duplicado nos dois | System = comportamento fixo; User = apenas o relato |
+| **Helpfulness** | — | **0.86** ✅ |
+| **Correctness** | — | **0.84** ✅ |
+| **F1-Score** | — | **0.83** ✅ |
+| **Clarity** | — | **0.88** ✅ |
+| **Precision** | — | **0.84** ✅ |
+| **Média geral** | — | **0.8489** ✅ |
+| **Status** | ❌ Reprovado (baixa qualidade por construção) | ✅ **APROVADO** |
+
+> **Nota de honestidade metodológica:** o v1 **não foi medido** com o `evaluate.py` neste projeto — o script avalia exclusivamente `{USERNAME_LANGSMITH_HUB}/bug_to_user_story_v2` (nome fixo no código, que é um dos arquivos "prontos, não alterar"). Os números do v1 no enunciado do desafio (~0.45–0.52) são explicitamente descritos lá como "apenas ilustrativos", então não foram reproduzidos aqui como se fossem medição real. A evolução medida de fato neste projeto é a das 5 iterações do v2, na tabela abaixo.
+
+### Evolução medida ao longo das iterações do v2
+
+| Iteração | Mudança principal | F1-Score | Média geral | Status |
+|---|---|---|---|---|
+| 1 | Few-shot + Role Prompting + SoT (esqueleto fixo) | 0.73 | 0.8183 | ❌ |
+| 2 | + Processo de análise + regras de precisão | 0.76 | 0.8285 | ❌ |
+| 3 | + Esqueletos por complexidade + gatilhos de seção | 0.79 | 0.8287 | ❌ |
+| 4 | + Exemplos para cálculo e performance (6 exemplos) | 0.78 | 0.8279 | ❌ |
+| **5** | **Anatomia dos critérios + generalização vs. literalidade (5 exemplos)** | **0.83** | **0.8489** | ✅ |
+
+---
+
+## Evidências no LangSmith
+
+### Links públicos
+
+| Recurso | Link |
+|---|---|
+| Prompt público no Prompt Hub | [`andrellsantos/bug_to_user_story_v2`](https://smith.langchain.com/hub/andrellsantos/bug_to_user_story_v2) |
+| Projeto de avaliação | [`mba-ia-pull-evaluation-prompt`](https://smith.langchain.com/) |
+| Dataset de avaliação | `mba-ia-pull-evaluation-prompt-eval` (15 exemplos) |
+
+### 1. Prompt v2 publicado no Prompt Hub
+
+Prompt `bug_to_user_story_v2` publicado e marcado como **público**, com as tags e a descrição das técnicas aplicadas.
+
+Link: https://smith.langchain.com/hub/andrellsantos/bug_to_user_story_v2
+
+![Prompt v2 publicado no LangSmith Prompt Hub](images/01-prompt-hub-v2.png)
+
+### 2. Dataset de avaliação com 15 exemplos
+
+Dataset `mba-ia-pull-evaluation-prompt-eval` criado a partir de `datasets/bug_to_user_story.jsonl`, com os 15 exemplos (5 simples, 7 médios, 3 complexos).
+
+![Dataset de avaliação com 15 exemplos](images/02-dataset-15-exemplos.png)
+
+### 3. Execução da avaliação com todas as métricas ≥ 0.8
+
+Resultado da Iteração 5 — **APROVADO**, com Helpfulness 0.86, Correctness 0.84, F1-Score 0.83, Clarity 0.88 e Precision 0.84 (média geral 0.8489).
+
+![Avaliação aprovada com todas as métricas acima de 0.8](images/03-avaliacao-aprovada.png)
+
+### 4. Tracing
+
+Traces das execuções do prompt contra o dataset, mostrando entrada, saída gerada e o encadeamento das chamadas ao LLM.
+
+**Tracing Geral**
+
+![Tracing geral](images/04-tracing-geral.png)
+
+**Tracing Detalhado**
+
+![Tracing detalhado](images/05-tracing-detalhado.png)
+
+### 5. Monitoring
+
+![Monitoring 1](images/06-monitoring-1.png)
+
+![Monitoring 2](images/06-monitoring-2.png)
+
+![Monitoring 3](images/06-monitoring-3.png)
+
+![Monitoring 4](images/06-monitoring-4.png)
 ---
 
 ## Estrutura do projeto
@@ -330,23 +461,21 @@ mba-ia-pull-evaluation-prompt/
 │
 ├── prompts/
 │   ├── bug_to_user_story_v1.yml  # Prompt inicial (pull do LangSmith Hub) ✅
-│   └── bug_to_user_story_v2.yml  # Otimizado (iteração 3): Few-shot + Role Prompting + SoT com esqueletos por complexidade ✅
+│   └── bug_to_user_story_v2.yml  # Otimizado (iteração 5): Few-shot + Role Prompting + SoT ✅ APROVADO
 │
 ├── datasets/
 │   └── bug_to_user_story.jsonl   # 15 exemplos de bugs para avaliação
 │
+├── images/                       # Screenshots das evidências do LangSmith
+│
 ├── src/
-│   ├── pull_prompts.py       # Pull do LangSmith ✅ implementado
-│   ├── push_prompts.py       # Push ao LangSmith ✅ implementado (execução manual pendente)
+│   ├── pull_prompts.py       # Pull do LangSmith ✅ implementado e executado
+│   ├── push_prompts.py       # Push ao LangSmith ✅ implementado e publicado
 │   ├── evaluate.py           # Avaliação automática (pronto, não alterar)
 │   ├── metrics.py            # 5 métricas implementadas (pronto, não alterar)
 │   └── utils.py              # Funções auxiliares (pronto, não alterar)
 │
 └── tests/
-    └── test_prompts.py       # Testes de validação (Fase 5, pendente)
+    └── test_prompts.py       # Testes de validação ✅ implementados (6/6 passando)
 ```
 
-## Próximos passos
-
-- **Fase 4 (iteração):** F1-Score estagnou entre 0.76-0.79 nas iterações 2-4; a Iteração 4 (mais exemplos) não ajudou como esperado (ver diagnóstico). Próximo passo (Iteração 5): generalizar as regras de cálculo (cobrir variação com desconto percentual, não só multiplicação simples) e de causa técnica (exigir reproduzir a causa exata citada, não uma sugestão genérica), possivelmente **substituindo** exemplos em vez de somar mais, já que o prompt maior parece ter diluído a qualidade dos bugs complexos (que antes tinham F1 ≥ 0.90).
-- **Fase 5:** implementar os 6 testes em `tests/test_prompts.py` e validar com `pytest tests/test_prompts.py`.
