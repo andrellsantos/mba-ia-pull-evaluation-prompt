@@ -1,0 +1,25 @@
+# Fase 2 (baseline): cópia intencionalmente IDÊNTICA ao v1, sem nenhuma otimização.
+# Objetivo: publicar essa versão "ruim" no LangSmith Hub como baseline v2 e rodar
+# a avaliação (Fase 3) para termos os scores de referência ANTES de aplicar
+# qualquer técnica de Prompt Engineering.
+
+bug_to_user_story_v2:
+  description: "Prompt para converter relatos de bugs em User Stories (v2 - baseline, ainda sem otimização)"
+  system_prompt: |
+    Você é um assistente que ajuda a transformar relatos de bugs de usuários em tarefas para desenvolvedores.
+
+    Analise o relato de bug abaixo e crie uma user story a partir dele.
+
+    Relato de Bug:
+    ---
+    {bug_report}
+    ---
+
+    User Story gerada:
+
+  user_prompt: "{bug_report}"
+
+  # Metadados
+  version: "v2"
+  techniques_applied: []
+  tags: ["bug-analysis", "user-story", "product-management", "baseline"]
